@@ -632,6 +632,31 @@ async function getUserRealGroup(userId) {
   }
 }
 
+/**
+ * 取得最近的打卡歷史紀錄
+ */
+async function getRecentCheckIns(groupId, limit = 10) {
+  if (isCloudMode && supabase) {
+    const { data, error } = await supabase
+      .from('check_ins')
+      .select('*')
+      .eq('group_id', groupId)
+      .order('check_in_time', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('[Supabase getRecentCheckIns Error]', error);
+      return [];
+    }
+    return data || [];
+  } else {
+    return memoryDb.check_ins
+      .filter((c) => c.group_id === groupId)
+      .sort((a, b) => new Date(b.check_in_time) - new Date(a.check_in_time))
+      .slice(0, limit);
+  }
+}
+
 async function resetMockGroup(groupId = 'mock-group') {
   if (isCloudMode && supabase) {
     await supabase.from('check_ins').delete().eq('group_id', groupId);
@@ -664,5 +689,6 @@ module.exports = {
   getGroupStatus,
   resetMockGroup,
   seedMockData,
-  getUserRealGroup
+  getUserRealGroup,
+  getRecentCheckIns
 };

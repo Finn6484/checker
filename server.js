@@ -256,6 +256,189 @@ async function handleLineEvent(event) {
         ]
       });
     }
+
+    // 查詢調取打卡資料明細
+    if (text === '打卡資料' || text === '打卡紀錄' || text === '打卡記錄' || text === '紀錄' || text === '記錄' || text === '資料' || text === '查詢' || text === '名單' || text === '明細') {
+      const todayStr = db.getTaipeiDateString();
+      let targetGroupId = groupId;
+      if (!targetGroupId || !targetGroupId.startsWith('C')) {
+        const realGroup = await db.getUserRealGroup(userId);
+        if (realGroup) targetGroupId = realGroup.group_id;
+      }
+
+      const status = await db.getGroupStatus(targetGroupId, todayStr, userId);
+      const targetName = status.target ? status.target.name : '⚠️ 尚未設定打卡點';
+      const streakText = status.streak > 0 ? `🔥 累積連勝：${status.streak} 天` : '🔥 尚無連勝紀錄';
+      const cutoffText = `⏰ 截止時間：${status.cutoffTime}`;
+      const progressPercent = status.quota > 0 ? Math.round((status.checkedInCount / status.quota) * 100) : 0;
+      const progressText = `👥 今日打卡進度：${status.checkedInCount} / ${status.quota} 人 (${progressPercent}%)`;
+
+      // 組裝每位成員的打卡詳情項目
+      const memberBoxes = (status.members || []).map((m) => {
+        const timeFormatted = m.checkInTime
+          ? new Date(m.checkInTime).toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Taipei' })
+          : null;
+
+        return {
+          type: 'box',
+          layout: 'horizontal',
+          alignItems: 'center',
+          spacing: 'md',
+          margin: 'md',
+          contents: [
+            {
+              type: 'text',
+              text: m.hasCheckedIn ? '✅' : (status.isOverdue ? '❌' : '⏳'),
+              size: 'md',
+              flex: 0
+            },
+            {
+              type: 'box',
+              layout: 'vertical',
+              flex: 1,
+              contents: [
+                {
+                  type: 'text',
+                  text: m.displayName || '成員',
+                  weight: 'bold',
+                  size: 'sm',
+                  color: '#1F2937'
+                },
+                {
+                  type: 'text',
+                  text: m.hasCheckedIn
+                    ? `於 ${timeFormatted} 打卡 (距離 ${m.distance || 0}m)`
+                    : (status.isOverdue ? '今日截止前未打卡' : '尚未打卡 (等待中)'),
+                  size: 'xxs',
+                  color: m.hasCheckedIn ? '#059669' : (status.isOverdue ? '#DC2626' : '#9CA3AF')
+                }
+              ]
+            },
+            {
+              type: 'text',
+              text: m.hasCheckedIn ? '已打卡' : (status.isOverdue ? '缺席' : '待打卡'),
+              size: 'xs',
+              weight: 'bold',
+              align: 'end',
+              color: m.hasCheckedIn ? '#059669' : (status.isOverdue ? '#DC2626' : '#6B7280'),
+              flex: 0
+            }
+          ]
+        };
+      });
+
+      return lineClient.replyMessage({
+        replyToken: event.replyToken,
+        messages: [
+          {
+            type: 'flex',
+            altText: `📋【今日打卡資料】${status.checkedInCount}/${status.quota} 人完成`,
+            contents: {
+              type: 'bubble',
+              header: {
+                type: 'box',
+                layout: 'vertical',
+                backgroundColor: '#1E293B',
+                contents: [
+                  {
+                    type: 'text',
+                    text: '📋 今日打卡即時資料',
+                    weight: 'bold',
+                    size: 'lg',
+                    color: '#FFFFFF'
+                  },
+                  {
+                    type: 'text',
+                    text: `${todayStr} • 打卡點：${targetName}`,
+                    size: 'xs',
+                    color: '#94A3B8',
+                    margin: 'xs'
+                  }
+                ]
+              },
+              body: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [
+                  {
+                    type: 'box',
+                    layout: 'vertical',
+                    backgroundColor: '#F8FAFC',
+                    cornerRadius: 'md',
+                    paddingAll: 'md',
+                    contents: [
+                      {
+                        type: 'text',
+                        text: progressText,
+                        weight: 'bold',
+                        size: 'sm',
+                        color: '#0F172A'
+                      },
+                      {
+                        type: 'text',
+                        text: `${streakText}  |  ${cutoffText}`,
+                        size: 'xs',
+                        color: '#475569',
+                        margin: 'xs'
+                      }
+                    ]
+                  },
+                  {
+                    type: 'separator',
+                    margin: 'lg'
+                  },
+                  {
+                    type: 'text',
+                    text: `小隊成員名單 (${status.members ? status.members.length : 0} 人)：`,
+                    weight: 'bold',
+                    size: 'xs',
+                    color: '#64748B',
+                    margin: 'md'
+                  },
+                  ...memberBoxes
+                ]
+              },
+              footer: {
+                type: 'box',
+                layout: 'horizontal',
+                spacing: 'sm',
+                contents: [
+                  {
+                    type: 'button',
+                    action: {
+                      type: 'uri',
+                      label: '🗺️ 查看地圖 (LIFF)',
+                      uri: `${LIFF_URL}?groupId=${encodeURIComponent(targetGroupId)}`
+                    },
+                    style: 'secondary',
+                    height: 'sm'
+                  }
+                ]
+              }
+            },
+            quickReply: {
+              items: [
+                {
+                  type: 'action',
+                  action: {
+                    type: 'location',
+                    label: '📍 傳送定位打卡'
+                  }
+                },
+                {
+                  type: 'action',
+                  action: {
+                    type: 'message',
+                    label: '🔄 重新整理資料',
+                    text: '打卡資料'
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      });
+    }
   }
 
   // 處理位置分享訊息 (聊天室中直接傳送定位自動打卡)
@@ -441,6 +624,20 @@ app.get('/api/status', async (req, res) => {
     res.json({ success: true, data: status });
   } catch (err) {
     console.error('[API status error]', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * 取得群組近期打卡明細紀錄
+ */
+app.get('/api/checkins/recent', async (req, res) => {
+  try {
+    const groupId = req.query.groupId || 'mock-group';
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const records = await db.getRecentCheckIns(groupId, limit);
+    res.json({ success: true, data: records });
+  } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
