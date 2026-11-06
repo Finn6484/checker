@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>LINE 定位打卡連勝系統</title>
+  <!-- Tailwind CSS & Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- LINE LIFF SDK -->
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <!-- Canvas Confetti 慶祝彩帶 -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <!-- Leaflet 小地圖套件 -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 antialiased font-sans pb-12">
+
+  <!-- 頂部導航列 -->
+  <header class="bg-emerald-600 text-white shadow-md sticky top-0 z-30">
+    <div class="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center space-x-2">
+        <span class="text-2xl">📍</span>
+        <div>
+          <h1 class="text-base font-bold leading-tight">定位打卡連勝系統</h1>
+          <p id="groupSubtitle" class="text-xs text-emerald-100">載入小隊資訊中...</p>
+        </div>
+      </div>
+      <div id="userBadge" class="flex items-center space-x-2 bg-emerald-700/60 rounded-full px-2.5 py-1 text-xs">
+        <img id="userAvatar" src="https://api.dicebear.com/7.x/bottts/svg?seed=user" alt="頭像" class="w-5 h-5 rounded-full border border-white/50">
+        <span id="userName" class="font-medium max-w-[80px] truncate">訪客</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- 測試模式提示列 (當 URL 包含 ?mock=true 或本機模式啟用時自動展開) -->
+  <div id="mockBanner" class="bg-amber-500 text-amber-950 px-4 py-2 text-xs font-medium flex items-center justify-between border-b border-amber-600 shadow-inner hidden">
+    <div class="flex items-center space-x-1.5">
+      <span class="text-base">🧪</span>
+      <span><strong>測試模式 (Mock Mode) 已啟用</strong>：支援一鍵定位與隊友模擬</span>
+    </div>
+    <button onclick="toggleMockPanel()" class="bg-amber-900 text-amber-100 px-2 py-0.5 rounded text-[11px] font-bold hover:bg-amber-800">
+      測試工具
+    </button>
+  </div>
+
+  <!-- 測試模式快捷面板 -->
+  <div id="mockPanel" class="bg-amber-50 border-b border-amber-200 px-4 py-3 text-xs hidden">
+    <p class="font-bold text-amber-900 mb-2">⚡ 快速模擬控制台：</p>
+    <div class="grid grid-cols-2 gap-2 mb-2">
+      <button onclick="mockSetLocation(true)" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-1.5 px-2 rounded shadow-sm text-center">
+        🎯 模擬在範圍內 (30m)
+      </button>
+      <button onclick="mockSetLocation(false)" class="bg-rose-600 hover:bg-rose-700 text-white font-medium py-1.5 px-2 rounded shadow-sm text-center">
+        🚫 模擬在範圍外 (250m)
+      </button>
+    </div>
+    <div class="grid grid-cols-3 gap-1.5">
+      <button onclick="mockTeammateCheckin()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-1.5 px-1 rounded shadow-sm text-center text-[11px]">
+        👥 模擬隊友打卡
+      </button>
+      <button onclick="mockSimulateOverdue()" class="bg-purple-600 hover:bg-purple-700 text-white font-medium py-1.5 px-1 rounded shadow-sm text-center text-[11px]">
+        ⏰ 模擬逾時
+      </button>
+      <button onclick="mockResetData()" class="bg-slate-600 hover:bg-slate-700 text-white font-medium py-1.5 px-1 rounded shadow-sm text-center text-[11px]">
+        🔄 重設測試資料
+      </button>
+    </div>
+  </div>
+
+  <main class="max-w-md mx-auto px-4 mt-4 space-y-4">
+
+    <!-- 1. 團隊連勝卡片 (小隊全員在截止時間前打卡才能累積連勝) -->
+    <section class="bg-gradient-to-br from-orange-500 to-amber-500 rounded-2xl p-5 text-white shadow-lg relative overflow-hidden">
+      <div class="absolute -right-4 -bottom-4 text-8xl opacity-15 select-none pointer-events-none">🔥</div>
+      <div class="flex items-center justify-between">
+        <div>
+          <span class="text-xs uppercase tracking-wider font-bold bg-white/20 px-2.5 py-0.5 rounded-full inline-block mb-1">
+            小隊連勝天數
+          </span>
+          <div class="flex items-baseline space-x-1">
+            <span id="streakCount" class="text-5xl font-extrabold tracking-tight">0</span>
+            <span class="text-lg font-bold">天</span>
+          </div>
+        </div>
+        <div id="streakBadge" class="text-right">
+          <span class="text-4xl block animate-bounce">🔥</span>
+          <span id="streakStatusText" class="text-xs font-semibold bg-black/20 px-2 py-0.5 rounded-full">未全員完成</span>
+        </div>
+      </div>
+
+      <!-- 今日截止時間提醒 -->
+      <div class="mt-3 flex items-center justify-between text-xs bg-black/15 px-3 py-1.5 rounded-xl">
+        <span class="flex items-center space-x-1">
+          <span>⏰</span>
+          <span>今日打卡截止：<strong id="cutoffDisplay">23:59</strong></span>
+        </span>
+        <span id="cutoffStatusBadge" class="font-bold text-amber-200">進行中</span>
+      </div>
+
+      <!-- 今日打卡進度條 -->
+      <div class="mt-3 pt-2 border-t border-white/20">
+        <div class="flex justify-between text-xs font-bold mb-1">
+          <span>今日打卡達成度</span>
+          <span id="progressRatio">0 / 3 人</span>
+        </div>
+        <div class="w-full bg-black/20 rounded-full h-3 overflow-hidden p-0.5">
+          <div id="progressBar" class="bg-white rounded-full h-2 transition-all duration-500 ease-out" style="width: 0%"></div>
+        </div>
+        <p id="streakRuleTip" class="text-[11px] text-orange-100 mt-1.5 flex items-center">
+          <span>⚠️ 需小隊全員在截止時間前打卡完成，才能累積連勝！</span>
+        </p>
+      </div>
+    </section>
+
+    <!-- 2. 打卡小隊名額卡片 (固定名額制) -->
+    <section class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center space-x-2">
+          <span class="text-xl">👥</span>
+          <div>
+            <h2 class="text-base font-bold text-slate-800">打卡小隊名單</h2>
+            <p id="teamQuotaSubtitle" class="text-xs text-slate-400">名額：3 人</p>
+          </div>
+        </div>
+        <div class="flex items-center space-x-1.5">
+          <button id="joinTeamBtn" onclick="handleJoinTeam()" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1.5 rounded-xl shadow-sm transition">
+            ➕ 加入小隊
+          </button>
+          <button id="leaveTeamBtn" onclick="handleLeaveTeam()" class="text-xs text-slate-500 hover:text-rose-600 font-semibold px-2 py-1 rounded hidden">
+            退出
+          </button>
+        </div>
+      </div>
+
+      <!-- 成員清單 -->
+      <div id="membersList" class="divide-y divide-slate-100">
+        <div class="py-4 text-center text-xs text-slate-400">載入小隊名單中...</div>
+      </div>
+    </section>
+
+    <!-- 3. GPS 即時定位與距離雷達 -->
+    <section class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center space-x-2">
+          <span class="text-xl">📡</span>
+          <h2 class="text-base font-bold text-slate-800">目前 GPS 定位距離</h2>
+        </div>
+        <button onclick="refreshGPS(true)" id="refreshGpsBtn" class="text-xs text-slate-500 hover:text-emerald-600 flex items-center space-x-1 font-medium">
+          <span id="refreshIcon">🔄</span>
+          <span>重新定位</span>
+        </button>
+      </div>
+
+      <!-- 直線距離量測儀 -->
+      <div class="bg-slate-50 rounded-xl p-4 border border-slate-100 text-center my-3">
+        <div class="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">與打卡地點直線距離</div>
+        <div class="flex items-center justify-center space-x-1 my-1">
+          <span id="currentDistance" class="text-4xl font-extrabold font-mono text-slate-800">--</span>
+          <span class="text-slate-500 font-bold text-sm">公尺</span>
+        </div>
+        <div id="distanceBadge" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-slate-200 text-slate-700 mt-1">
+          📡 正在獲取衛星定位...
+        </div>
+      </div>
+
+      <!-- GPS 定位小地圖與虛線指引 -->
+      <div class="relative w-full h-56 rounded-2xl overflow-hidden border border-slate-200 shadow-sm my-3 z-0">
+        <div id="radarMap" class="w-full h-full bg-slate-100"></div>
+        <!-- 懸浮在小地圖上的狀態徽章 -->
+        <div id="mapDistanceBadge" class="absolute top-2.5 right-2.5 z-[400] bg-white/95 backdrop-blur-sm px-2.5 py-1 rounded-full text-[11px] font-bold shadow border border-slate-200 text-slate-700 flex items-center space-x-1">
+          <span>🎯</span>
+          <span id="mapDistanceText">定位載入中...</span>
+        </div>
+        <!-- 地圖圖例說明 -->
+        <div class="absolute bottom-2 left-2 z-[400] bg-white/95 backdrop-blur-sm px-2 py-0.5 rounded-lg text-[10px] font-medium shadow text-slate-600 flex items-center space-x-2">
+          <span class="flex items-center space-x-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block border border-white"></span><span>100m 範圍</span></span>
+          <span class="flex items-center space-x-1"><span class="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block border border-white"></span><span>目前位置</span></span>
+          <span class="flex items-center space-x-1"><span class="w-3 border-b-2 border-dashed border-emerald-600 inline-block"></span><span>距離指引</span></span>
+        </div>
+      </div>
+
+      <!-- GPS 座標狀態 -->
+      <div class="flex justify-between items-center text-[11px] text-slate-500 font-mono px-1">
+        <span>目前座標: <span id="currentCoords">讀取中...</span></span>
+        <span id="gpsAccuracy">精確度: --</span>
+      </div>
+
+      <!-- 核心打卡按鈕 -->
+      <div class="mt-4">
+        <button id="checkInBtn" onclick="performCheckIn()" disabled
+          class="w-full py-4 rounded-2xl font-bold text-base shadow-md transition-all duration-200 flex items-center justify-center space-x-2 bg-slate-300 text-slate-500 cursor-not-allowed">
+          <span id="checkInBtnIcon">📍</span>
+          <span id="checkInBtnText">定位偵測中...</span>
+        </button>
+        <p id="checkInNotice" class="text-center text-xs text-slate-400 mt-2 font-medium">
+          ※ 必須在打卡地點半徑 100 公尺內且在截止時間前，按鈕才會解鎖
+        </p>
+      </div>
+    </section>
+
+    <!-- 4. 打卡地點與規則設定卡片 -->
+    <section id="targetLocationCard" class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center space-x-2">
+          <span class="text-xl">📍</span>
+          <h2 class="text-base font-bold text-slate-800">打卡基準地點</h2>
+        </div>
+        <button onclick="promptEditSettings()" class="text-xs text-emerald-600 font-bold hover:underline">
+          ⚙️ 重新設定地點/名額/時間
+        </button>
+      </div>
+
+      <div id="targetSetView" class="space-y-2">
+        <div class="flex items-start justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
+          <div>
+            <div id="targetLocationName" class="font-bold text-sm text-slate-900">台北 101 打卡點</div>
+            <div id="targetCoordinates" class="text-xs text-slate-500 font-mono mt-0.5">緯度: 25.033964, 經度: 121.564468</div>
+          </div>
+          <span class="text-xs bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded">
+            半徑 100m
+          </span>
+        </div>
+      </div>
+
+      <div id="targetNotSetView" class="hidden bg-amber-50 border border-amber-200 p-4 rounded-xl text-center">
+        <span class="text-3xl block mb-2">📌</span>
+        <h3 class="font-bold text-amber-900 text-sm">此群組尚未設定打卡地點！</h3>
+        <p class="text-xs text-amber-700 mt-1 mb-3">請至打卡基準地點，點選下方按鈕以目前 GPS 座標建立半徑 100 公尺打卡點。</p>
+        <button onclick="promptEditSettings()" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-4 rounded-xl shadow text-sm transition">
+          📍 設定打卡地點、名額與截止時間
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- 設定對話框 (Modal：地點、小隊固定人數上限、每日截止時間) -->
+  <div id="settingsModal" class="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center p-4 hidden backdrop-blur-sm">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl animate-scaleIn">
+      <div class="flex items-center space-x-2 mb-3">
+        <span class="text-2xl">⚙️</span>
+        <h3 class="text-lg font-bold text-slate-900">設定群組打卡規則</h3>
+      </div>
+      <p class="text-xs text-slate-500 mb-4">
+        聊天室內任何人皆可自由協同設定地點、小隊人數上限與每日截止時間。
+      </p>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">地點名稱</label>
+          <input type="text" id="modalTargetName" placeholder="例如：台北總部辦公室" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">小隊人數上限</label>
+            <input type="number" min="1" max="50" id="modalMemberQuota" value="3" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">每日截止時間</label>
+            <input type="time" id="modalCutoffTime" value="23:59" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500">
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">緯度 (Lat)</label>
+            <input type="number" step="0.000001" id="modalTargetLat" placeholder="25.033964" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">經度 (Lng)</label>
+            <input type="number" step="0.000001" id="modalTargetLng" placeholder="121.564468" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500">
+          </div>
+        </div>
+
+        <button onclick="fillModalWithCurrentGPS()" type="button" class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition flex items-center justify-center space-x-1">
+          <span>📡 帶入目前 GPS 定位座標</span>
+        </button>
+      </div>
+
+      <div class="flex space-x-2 mt-5">
+        <button onclick="closeSettingsModal()" class="flex-1 py-2.5 border border-slate-200 text-slate-600 font-bold text-sm rounded-xl hover:bg-slate-50">
+          取消
+        </button>
+        <button onclick="submitGroupSettings()" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow">
+          儲存設定
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast 訊息浮動通知 -->
+  <div id="toast" class="fixed top-16 left-1/2 -translate-x-1/2 z-[3000] px-4 py-2.5 rounded-full text-xs font-bold shadow-lg transition-all duration-300 opacity-0 pointer-events-none flex items-center space-x-2">
+    <span id="toastIcon"></span>
+    <span id="toastMsg"></span>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
