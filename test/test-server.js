@@ -78,6 +78,15 @@ async function testServer() {
     assert.strictEqual(mockJson.success, true);
     console.log('  ✔ [POST /api/mock/checkin-other] 模擬隊友打卡成功:', mockJson.message);
 
+    // 6. Recent check-ins query
+    const recentRes = await fetch(`${baseUrl}/api/checkins/recent?groupId=mock-group&limit=50`);
+    const recentJson = await recentRes.json();
+    assert.strictEqual(recentJson.success, true);
+    assert.ok(Array.isArray(recentJson.data));
+    assert.ok(recentJson.data.length >= 2, '應至少包含剛才打卡的 2 筆紀錄');
+    assert.ok(recentJson.data[0].displayName != null, '紀錄應包含成員暱稱');
+    console.log('  ✔ [GET /api/checkins/recent] 成功取得歷史打卡紀錄 (筆數:', recentJson.data.length, ')');
+
     console.log('\n====================================================');
     console.log('🎉 所有伺服器 API 端點測試皆順利通過！');
     console.log('====================================================');

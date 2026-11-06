@@ -229,6 +229,8 @@ async function fetchStatus() {
       state.groupStatus = json.data;
       renderStatus();
     }
+    // 同步載入過往歷史打卡紀錄
+    await fetchHistoryCheckIns();
   } catch (e) {
     console.error('[fetchStatus error]', e);
   }
@@ -526,6 +528,124 @@ function updateRadarMap(targetLat, targetLng, targetName, userLat, userLng, inRa
     map.fitBounds(bounds, { padding: [35, 35], maxZoom: 18 });
     setTimeout(() => { if (map) map.invalidateSize(); }, 150);
   } catch (err) {}
+}
+
+// -------------------------------------------------------------
+// 4.2 歷史打卡紀錄 (過往所有足跡)
+// -------------------------------------------------------------
+async function fetchHistoryCheckIns(manual = false) {
+  const listEl = document.getElementById('historyList');
+  const subEl = document.getElementById('historySubtitle');
+  const refreshIcon = document.getElementById('historyRefreshIcon');
+
+  if (manual && refreshIcon) {
+    refreshIcon.classList.add('animate-spin');
+  }
+
+  try {
+    const res = await fetch(`/api/checkins/recent?groupId=${encodeURIComponent(state.groupId)}&limit=100`);
+    const json = await res.json();
+
+    if (json.success && Array.isArray(json.data)) {
+      renderHistoryRecords(json.data);
+      if (subEl) {
+        subEl.innerText = `共 ${json.data.length} 筆過往打卡足跡`;
+      }
+      if (manual) {
+        showToast('已更新歷史打卡紀錄', 'success');
+      }
+    } else {
+      if (listEl) {
+        listEl.innerHTML = `<div class="py-6 text-center text-xs text-slate-400">無法取得歷史紀錄</div>`;
+      }
+    }
+  } catch (err) {
+    console.error('[fetchHistoryCheckIns error]', err);
+    if (listEl) {
+      listEl.innerHTML = `<div class="py-6 text-center text-xs text-rose-400">載入歷史紀錄發生錯誤</div>`;
+    }
+  } finally {
+    if (manual && refreshIcon) {
+      setTimeout(() => refreshIcon.classList.remove('animate-spin'), 600);
+    }
+  }
+}
+
+function renderHistoryRecords(records) {
+  const listEl = document.getElementById('historyList');
+  if (!listEl) return;
+
+  if (!records || records.length === 0) {
+    listEl.innerHTML = `
+      <div class="py-8 text-center text-slate-400">
+        <span class="text-3xl block mb-2">🏖️</span>
+        <p class="text-xs font-medium">目前尚無過往打卡紀錄</p>
+        <p class="text-[11px] text-slate-300 mt-0.5">小隊全員每日完成打卡即可在此留下足跡</p>
+      </div>
+    `;
+    return;
+  }
+
+  const currentUserId = state.user ? state.user.userId : '';
+
+  const html = records.map((r) => {
+    const isMe = r.user_id === currentUserId;
+    const name = escapeHtml(r.displayName || '小隊成員');
+    const avatar = r.pictureUrl;
+
+    // 格式化時間 (台北時區)
+    let timeDisplay = '';
+    if (r.check_in_time) {
+      try {
+        const d = new Date(r.check_in_time);
+        timeDisplay = d.toLocaleString('zh-TW', {
+          timeZone: 'Asia/Taipei',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        });
+      } catch (e) {
+        timeDisplay = r.check_in_time;
+      }
+    } else if (r.check_in_date) {
+      timeDisplay = r.check_in_date;
+    }
+
+    const dist = r.distance != null ? Math.round(Number(r.distance)) : 0;
+    const onTimeBadge = r.is_on_time !== false
+      ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">準時</span>`
+      : `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">逾期</span>`;
+
+    const avatarHtml = avatar
+      ? `<img src="${avatar}" alt="${name}" class="w-8 h-8 rounded-full object-cover border border-slate-200 flex-shrink-0" onerror="this.src=''; this.outerHTML='<div class=\\\'w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs flex-shrink-0 border border-slate-200\\\'>👤</div>';">`
+      : `<div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs flex-shrink-0 border border-slate-200">👤</div>`;
+
+    return `
+      <div class="py-2.5 flex items-center justify-between space-x-3 transition hover:bg-slate-50/50 rounded-lg px-1">
+        <div class="flex items-center space-x-2.5 min-w-0">
+          ${avatarHtml}
+          <div class="truncate">
+            <div class="flex items-center space-x-1.5">
+              <span class="text-xs font-bold text-slate-800 truncate">${name}</span>
+              ${isMe ? `<span class="px-1.5 py-0.2 rounded text-[10px] bg-emerald-100 text-emerald-700 font-semibold">你</span>` : ''}
+            </div>
+            <div class="flex items-center space-x-2 text-[11px] text-slate-400 mt-0.5">
+              <span>⏰ ${timeDisplay}</span>
+              <span>•</span>
+              <span>📍 ${dist}m</span>
+            </div>
+          </div>
+        </div>
+        <div class="flex-shrink-0">
+          ${onTimeBadge}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  listEl.innerHTML = html;
 }
 
 // -------------------------------------------------------------

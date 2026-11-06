@@ -633,9 +633,10 @@ async function getUserRealGroup(userId) {
 }
 
 /**
- * 取得最近的打卡歷史紀錄
+ * 取得最近的打卡歷史紀錄 (自動關聯成員暱稱與頭像)
  */
-async function getRecentCheckIns(groupId, limit = 10) {
+async function getRecentCheckIns(groupId, limit = 50) {
+  let rawRecords = [];
   if (isCloudMode && supabase) {
     const { data, error } = await supabase
       .from('check_ins')
@@ -646,15 +647,29 @@ async function getRecentCheckIns(groupId, limit = 10) {
 
     if (error) {
       console.error('[Supabase getRecentCheckIns Error]', error);
-      return [];
+    } else {
+      rawRecords = data || [];
     }
-    return data || [];
   } else {
-    return memoryDb.check_ins
+    rawRecords = memoryDb.check_ins
       .filter((c) => c.group_id === groupId)
       .sort((a, b) => new Date(b.check_in_time) - new Date(a.check_in_time))
       .slice(0, limit);
   }
+
+  // 取得該群組成員資料庫，比對成員暱稱與頭像
+  const members = await getTeamMembers(groupId);
+  const memberMap = new Map();
+  members.forEach((m) => memberMap.set(m.user_id, m));
+
+  return rawRecords.map((r) => {
+    const m = memberMap.get(r.user_id);
+    return {
+      ...r,
+      displayName: m ? m.display_name : '小隊成員',
+      pictureUrl: m ? m.picture_url : null
+    };
+  });
 }
 
 async function resetMockGroup(groupId = 'mock-group') {
