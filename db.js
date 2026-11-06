@@ -605,7 +605,37 @@ async function getGroupStatus(groupId, dateStr = getTaipeiDateString(), currentU
   };
 }
 
-function resetMockGroup(groupId = 'mock-group') {
+/**
+ * 尋找使用者所屬的真實 LINE 群組 (group_id 以 'C' 開頭)
+ */
+async function getUserRealGroup(userId) {
+  if (!userId) return null;
+  if (isCloudMode && supabase) {
+    const { data, error } = await supabase
+      .from('group_members')
+      .select('group_id, joined_at')
+      .eq('user_id', userId)
+      .like('group_id', 'C%')
+      .order('joined_at', { ascending: false })
+      .limit(1);
+
+    if (error || !data || data.length === 0) return null;
+    return data[0];
+  } else {
+    const memberships = Object.values(memoryDb.group_members).filter(
+      (m) => m.user_id === userId && m.group_id.startsWith('C')
+    );
+    if (memberships.length > 0) {
+      return memberships[memberships.length - 1];
+    }
+    return null;
+  }
+}
+
+async function resetMockGroup(groupId = 'mock-group') {
+  if (isCloudMode && supabase) {
+    await supabase.from('check_ins').delete().eq('group_id', groupId);
+  }
   delete memoryDb.groups[groupId];
   Object.keys(memoryDb.group_members).forEach((k) => {
     if (k.startsWith(`${groupId}_`)) delete memoryDb.group_members[k];
@@ -633,5 +663,6 @@ module.exports = {
   evaluateAndUpdateStreak,
   getGroupStatus,
   resetMockGroup,
-  seedMockData
+  seedMockData,
+  getUserRealGroup
 };

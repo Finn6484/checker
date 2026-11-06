@@ -49,6 +49,8 @@ async function testServer() {
     console.log('  ✔ [POST /api/checkin - 範圍外攔截] 成功攔截超出 100m 打卡 (距離:', outCheckJson.distance, 'm)');
 
     // 4. In range checkin test (<= 100m)
+    const targetLat = status.data.target.lat;
+    const targetLng = status.data.target.lng;
     const inCheckRes = await fetch(`${baseUrl}/api/checkin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -56,8 +58,8 @@ async function testServer() {
         groupId: 'mock-group',
         userId: 'mock-user-me',
         displayName: '測試者',
-        lat: 25.033964 + 0.0001, // ~15m
-        lng: 121.564468
+        lat: targetLat + 0.0001, // ~11m
+        lng: targetLng
       })
     });
     assert.strictEqual(inCheckRes.status, 200, '範圍內打卡應回傳 200');

@@ -213,7 +213,7 @@ async function handleLineEvent(event) {
                     action: {
                       type: 'uri',
                       label: '📍 開啟打卡頁面 (LIFF)',
-                      uri: LIFF_URL
+                      uri: `${LIFF_URL}?groupId=${encodeURIComponent(groupId)}`
                     },
                     style: 'primary',
                     color: '#00B900'
@@ -232,7 +232,7 @@ async function handleLineEvent(event) {
         messages: [
           {
             type: 'text',
-            text: `📍 請點擊下方連結開啟 LIFF 打卡頁面，任何人皆可自由設定打卡地點、調整小隊名額上限與截止時間：\n${LIFF_URL}`
+            text: `📍 請點擊下方連結開啟 LIFF 打卡頁面，任何人皆可自由設定打卡地點、調整小隊名額上限與截止時間：\n${LIFF_URL}?groupId=${encodeURIComponent(groupId)}`
           }
         ]
       });
@@ -246,7 +246,7 @@ async function handleLineEvent(event) {
       messages: [
         {
           type: 'text',
-          text: `👋 大家好！歡迎使用【定位打卡連勝系統】！\n\n📌 規則說明：\n1. 初次使用請點擊打卡頁面設定打卡地點、小隊人數上限與每日截止時間。\n2. 打卡需在打卡地點半徑 100 公尺內方可成功。\n3. 小隊成員每天在截止時間前全員完成打卡，才能累積團隊連勝天數！🔥\n\n輸入「打卡」或點擊下方連結開始：\n${LIFF_URL}`
+          text: `👋 大家好！歡迎使用【定位打卡連勝系統】！\n\n📌 規則說明：\n1. 初次使用請點擊打卡頁面設定打卡地點、小隊人數上限與每日截止時間。\n2. 打卡需在打卡地點半徑 100 公尺內方可成功。\n3. 小隊成員每天在截止時間前全員完成打卡，才能累積團隊連勝天數！🔥\n\n輸入「打卡」或點擊下方連結開始：\n${LIFF_URL}?groupId=${encodeURIComponent(groupId)}`
         }
       ]
     });
@@ -258,6 +258,33 @@ async function handleLineEvent(event) {
 // -------------------------------------------------------------
 // REST API 介面 (供 LIFF 前端使用)
 // -------------------------------------------------------------
+
+/**
+ * 查詢使用者預設/所屬的真實 LINE 群組 (避免 1 對 1 聊天室 ID 隔離)
+ */
+app.get('/api/user/default-group', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    const requestedGroupId = req.query.groupId;
+
+    // 1. 若 requestedGroupId 本身即是真實 LINE 群組 (C 開頭)，直接採用
+    if (requestedGroupId && requestedGroupId.startsWith('C')) {
+      return res.json({ success: true, groupId: requestedGroupId });
+    }
+
+    // 2. 否則從資料庫查詢該使用者在聊天室中參與的真實 LINE 群組
+    if (userId) {
+      const realGroup = await db.getUserRealGroup(userId);
+      if (realGroup && realGroup.group_id) {
+        return res.json({ success: true, groupId: realGroup.group_id });
+      }
+    }
+
+    res.json({ success: true, groupId: requestedGroupId || 'mock-group' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 /**
  * 取得群組完整狀態
@@ -528,7 +555,7 @@ app.post('/api/mock/simulate-overdue', async (req, res) => {
 app.post('/api/mock/reset', async (req, res) => {
   try {
     const groupId = req.body.groupId || 'mock-group';
-    db.resetMockGroup(groupId);
+    await db.resetMockGroup(groupId);
     res.json({ success: true, message: '測試資料已重設為預設小隊 (3人)' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

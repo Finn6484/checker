@@ -25,12 +25,41 @@ let userMarker = null;
 let guidanceLine = null;
 
 // -------------------------------------------------------------
-// 1. 初始化進入點
+// 1. 網址參數輔助解析 (支援 liff.state 與直接 query)
+// -------------------------------------------------------------
+function extractGroupId() {
+  // 1. 直接從網址 search 參數取得
+  let params = new URLSearchParams(window.location.search);
+  if (params.get('groupId')) return params.get('groupId');
+
+  // 2. 從 liff.state (LINE 重新導向時包裹的參數) 解密取得
+  const liffState = params.get('liff.state');
+  if (liffState) {
+    try {
+      const decoded = decodeURIComponent(liffState);
+      const nested = new URLSearchParams(decoded.startsWith('?') ? decoded.slice(1) : decoded);
+      if (nested.get('groupId')) return nested.get('groupId');
+    } catch (e) {}
+  }
+
+  // 3. 從 hash 錨點參數取得
+  if (window.location.hash) {
+    try {
+      const hashStr = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
+      const hashParams = new URLSearchParams(hashStr);
+      if (hashParams.get('groupId')) return hashParams.get('groupId');
+    } catch (e) {}
+  }
+  return null;
+}
+
+// -------------------------------------------------------------
+// 2. 初始化進入點
 // -------------------------------------------------------------
 window.addEventListener('DOMContentLoaded', async () => {
   const urlParams = new URLSearchParams(window.location.search);
   const mockParam = urlParams.get('mock');
-  const groupParam = urlParams.get('groupId');
+  const groupParam = extractGroupId();
 
   if (groupParam) state.groupId = groupParam;
 
@@ -56,7 +85,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 // -------------------------------------------------------------
-// 2. LIFF SDK 初始化
+// 3. LIFF SDK 初始化
 // -------------------------------------------------------------
 async function initLiff() {
   if (typeof liff === 'undefined') {
@@ -66,6 +95,12 @@ async function initLiff() {
 
   await liff.init({ liffId: LIFF_ID });
 
+  // LIFF 初始化完成後，重新檢查被 LINE SDK 還原的 URL 參數
+  const extractedId = extractGroupId();
+  if (extractedId) {
+    state.groupId = extractedId;
+  }
+
   if (liff.isLoggedIn()) {
     const profile = await liff.getProfile();
     state.user.userId = profile.userId;
@@ -73,8 +108,24 @@ async function initLiff() {
     state.user.pictureUrl = profile.pictureUrl;
 
     const context = liff.getContext();
-    if (context && (context.groupId || context.roomId)) {
-      state.groupId = context.groupId || context.roomId;
+    // 只有當 context.groupId 是以 'C' 開頭的真實 LINE 群組時才使用
+    if (context && context.groupId && context.groupId.startsWith('C')) {
+      state.groupId = context.groupId;
+    }
+
+    // 若目前的 groupId 不是真實 LINE 群組 (未以 C 開頭，例如 1對1聊天室產生的 UUID)
+    // 自動向後端查詢該使用者在群組中登記的真實 LINE 群組，實現跨聊天室自動同步
+    if (!state.groupId.startsWith('C') && !state.isMockMode) {
+      try {
+        const res = await fetch(`/api/user/default-group?userId=${encodeURIComponent(state.user.userId)}&groupId=${encodeURIComponent(state.groupId)}`);
+        const json = await res.json();
+        if (json.success && json.groupId && json.groupId.startsWith('C')) {
+          state.groupId = json.groupId;
+          console.log('[Auto-linked Real Group]', state.groupId);
+        }
+      } catch (err) {
+        console.warn('Auto-link group failed:', err.message);
+      }
     }
 
     renderUserHeader();
