@@ -212,7 +212,7 @@ async function handleLineEvent(event) {
                     type: 'button',
                     action: {
                       type: 'uri',
-                      label: '📍 開啟打卡頁面 (LIFF)',
+                      label: '🗺️ 查看打卡小地圖 (LIFF)',
                       uri: `${LIFF_URL}?groupId=${encodeURIComponent(groupId)}`
                     },
                     style: 'primary',
@@ -220,6 +220,25 @@ async function handleLineEvent(event) {
                   }
                 ]
               }
+            },
+            quickReply: {
+              items: [
+                {
+                  type: 'action',
+                  action: {
+                    type: 'location',
+                    label: '📍 傳送定位直接打卡'
+                  }
+                },
+                {
+                  type: 'action',
+                  action: {
+                    type: 'uri',
+                    label: '🗺️ 開啟小地圖',
+                    uri: `${LIFF_URL}?groupId=${encodeURIComponent(groupId)}`
+                  }
+                }
+              ]
             }
           }
         ]
@@ -233,6 +252,129 @@ async function handleLineEvent(event) {
           {
             type: 'text',
             text: `📍 請點擊下方連結開啟 LIFF 打卡頁面，任何人皆可自由設定打卡地點、調整小隊名額上限與截止時間：\n${LIFF_URL}?groupId=${encodeURIComponent(groupId)}`
+          }
+        ]
+      });
+    }
+  }
+
+  // 處理位置分享訊息 (聊天室中直接傳送定位自動打卡)
+  if (event.type === 'message' && event.message.type === 'location') {
+    const lat = event.message.latitude;
+    const lng = event.message.longitude;
+    const todayStr = db.getTaipeiDateString();
+
+    // 確定目標群組
+    let targetGroupId = groupId;
+    if (!targetGroupId || !targetGroupId.startsWith('C')) {
+      const realGroup = await db.getUserRealGroup(userId);
+      if (realGroup) targetGroupId = realGroup.group_id;
+    }
+
+    const group = await db.getGroup(targetGroupId);
+    if (!group || group.target_lat == null || group.target_lng == null) {
+      return lineClient.replyMessage({
+        replyToken: event.replyToken,
+        messages: [
+          {
+            type: 'text',
+            text: `⚠️ 此群組尚未設定打卡基準地點！\n請先開啟打卡小地圖完成初次設定：\n${LIFF_URL}?groupId=${encodeURIComponent(targetGroupId)}`
+          }
+        ]
+      });
+    }
+
+    // 計算直線距離
+    const distMeters = calculateDistanceMeters(lat, lng, group.target_lat, group.target_lng);
+    const roundedDistance = Math.round(distMeters);
+
+    // 取得使用者暱稱
+    let senderName = '小隊成員';
+    let userAvatar = null;
+    if (lineClient && userId) {
+      try {
+        const p = source.groupId
+          ? await lineClient.getGroupMemberProfile(source.groupId, userId)
+          : await lineClient.getProfile(userId);
+        if (p) {
+          senderName = p.displayName;
+          userAvatar = p.pictureUrl;
+        }
+      } catch (e) {}
+    }
+
+    // 1. 判斷 100 公尺距離限制
+    if (distMeters > 100) {
+      return lineClient.replyMessage({
+        replyToken: event.replyToken,
+        messages: [
+          {
+            type: 'text',
+            text: `🚫【打卡失敗 - 超出範圍】\n\n${senderName} 您好！\n您目前距離打卡點「${group.target_name}」約 ${roundedDistance} 公尺。\n⚠️ 必須在半徑 100 公尺內方可打卡。\n請移動至打卡範圍內再試一次！`
+          }
+        ]
+      });
+    }
+
+    // 2. 判斷是否逾期
+    const isPastCutoff = db.isTimePastCutoff(group.cutoff_time);
+    if (isPastCutoff) {
+      return lineClient.replyMessage({
+        replyToken: event.replyToken,
+        messages: [
+          {
+            type: 'text',
+            text: `⏰【打卡失敗 - 已逾期】\n\n今日打卡截止時間 (${group.cutoff_time}) 已過，本次打卡已無法計入今日連勝！`
+          }
+        ]
+      });
+    }
+
+    // 3. 判斷今日是否已打過卡
+    const todayCheckIns = await db.getTodayCheckIns(targetGroupId, todayStr);
+    const alreadyCheckedIn = todayCheckIns.some((c) => c.user_id === userId);
+    if (alreadyCheckedIn) {
+      return lineClient.replyMessage({
+        replyToken: event.replyToken,
+        messages: [
+          {
+            type: 'text',
+            text: `ℹ️【今日已完成打卡】\n\n${senderName} 您今天已經完成打卡囉！無需重複打卡。`
+          }
+        ]
+      });
+    }
+
+    // 4. 寫入打卡紀錄並判定連勝
+    const result = await db.recordCheckIn({
+      groupId: targetGroupId,
+      userId,
+      displayName: senderName,
+      pictureUrl: userAvatar,
+      dateStr: todayStr,
+      lat,
+      lng,
+      distance: roundedDistance
+    });
+
+    // 5. 依據是否全員達成回覆訊息
+    if (result.isAllCheckedIn && result.newStreakAwarded) {
+      return lineClient.replyMessage({
+        replyToken: event.replyToken,
+        messages: [
+          {
+            type: 'text',
+            text: `🎉【全體連勝達成！】\n\n${senderName} 已在聊天室直接完成打卡 (距離基準點 ${roundedDistance} 公尺)！\n\n🔥 小隊全體 ${result.quota} 位成員皆已在截止時間前打卡完畢！\n連勝天數再 +1！目前累積連勝：${result.streak} 天！\n大家明天請繼續保持！💪`
+          }
+        ]
+      });
+    } else {
+      return lineClient.replyMessage({
+        replyToken: event.replyToken,
+        messages: [
+          {
+            type: 'text',
+            text: `✅【打卡成功！】\n\n${senderName} 已在聊天室直接完成打卡 (距離基準點 ${roundedDistance} 公尺)！\n\n👥 今日小隊打卡進度：${result.checkedInCount} / ${result.quota} 人\n⏰ 每日截止時間：${group.cutoff_time}\n${result.isAllCheckedIn ? '🎉 全員打卡達成！' : `⏳ 還差 ${result.quota - result.checkedInCount} 人即可達成今日連勝！`}`
           }
         ]
       });
