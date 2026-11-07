@@ -52,8 +52,8 @@ async function runTests() {
   assert.strictEqual(join3.success, false, '超過名額 (2人) 時應拒絕加入');
   console.log('  ✔ 通過：名額限制判定正確 (已加入 2/2 人，第 3 人自動拒絕)。\n');
 
-  // 測試 4: 半徑 100 公尺 (直徑 200 公尺) 距離判斷
-  console.log('▶ [Test 4] 半徑 100 公尺 (直徑 200 公尺) 限制判定');
+  // 測試 4: 半徑 200 公尺 (直徑 400 公尺) 距離判斷
+  console.log('▶ [Test 4] 半徑 200 公尺 (直徑 400 公尺) 限制判定');
   const todayStr = db.getTaipeiDateString();
 
   // 成員 A 在 30m (範圍內) 打卡

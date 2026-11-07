@@ -31,7 +31,7 @@ async function testServer() {
     assert.ok(status.data.target != null);
     console.log('  ✔ [GET /api/status] 群組狀態查詢通過 (地點:', status.data.target.name, ')');
 
-    // 3. Out of range checkin test (> 100m radius)
+    // 3. Out of range checkin test (> 200m radius)
     const outCheckRes = await fetch(`${baseUrl}/api/checkin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -43,14 +43,14 @@ async function testServer() {
         lng: 121.570000
       })
     });
-    assert.strictEqual(outCheckRes.status, 400, '超過半徑 100 公尺應回傳 400');
+    assert.strictEqual(outCheckRes.status, 400, '超過半徑 200 公尺應回傳 400');
     const outCheckJson = await outCheckRes.json();
     assert.strictEqual(outCheckJson.inRange, false);
-    assert.strictEqual(outCheckJson.maxAllowedDistance, 100);
-    assert.strictEqual(outCheckJson.allowedDiameter, 200);
-    console.log('  ✔ [POST /api/checkin - 範圍外攔截] 成功攔截超出半徑 100m (直徑 200m) 打卡 (距離:', outCheckJson.distance, 'm)');
+    assert.strictEqual(outCheckJson.maxAllowedDistance, 200);
+    assert.strictEqual(outCheckJson.allowedDiameter, 400);
+    console.log('  ✔ [POST /api/checkin - 範圍外攔截] 成功攔截超出半徑 200m (直徑 400m) 打卡 (距離:', outCheckJson.distance, 'm)');
 
-    // 4. In range checkin test (<= 100m)
+    // 4. In range checkin test (<= 200m)
     const targetLat = status.data.target.lat;
     const targetLng = status.data.target.lng;
     const inCheckRes = await fetch(`${baseUrl}/api/checkin`, {
@@ -68,9 +68,9 @@ async function testServer() {
     const inCheckJson = await inCheckRes.json();
     assert.strictEqual(inCheckJson.success, true);
     assert.strictEqual(inCheckJson.inRange, true);
-    assert.strictEqual(inCheckJson.allowedRadius, 100);
-    assert.strictEqual(inCheckJson.allowedDiameter, 200);
-    console.log('  ✔ [POST /api/checkin - 範圍內打卡] 打卡成功 (距離:', inCheckJson.distance, 'm，半徑 100m / 直徑 200m 範圍內)');
+    assert.strictEqual(inCheckJson.allowedRadius, 200);
+    assert.strictEqual(inCheckJson.allowedDiameter, 400);
+    console.log('  ✔ [POST /api/checkin - 範圍內打卡] 打卡成功 (距離:', inCheckJson.distance, 'm，半徑 200m / 直徑 400m 範圍內)');
 
     // 5. Mock teammate check-in
     const mockRes = await fetch(`${baseUrl}/api/mock/checkin-other`, {

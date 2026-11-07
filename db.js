@@ -734,11 +734,11 @@ async function getGroupStatus(groupId, dateStr = getTaipeiDateString(), currentU
       lat: group.target_lat,
       lng: group.target_lng,
       name: group.target_name || '打卡基準點',
-      radius: 100, // 半徑 100 公尺
-      diameter: 200 // 直徑 200 公尺
+      radius: 200, // 半徑 200 公尺
+      diameter: 400 // 直徑 400 公尺
     } : null,
-    allowedRadius: 100, // 半徑 100 公尺
-    allowedDiameter: 200, // 直徑 200 公尺
+    allowedRadius: 200, // 半徑 200 公尺
+    allowedDiameter: 400, // 直徑 400 公尺
     quota,
     cutoffTime,
     isOverdue,

@@ -55,9 +55,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // -------------------------------------------------------------
-// 打卡有效範圍限制：半徑 100 公尺 (直徑 200 公尺)
+// 打卡有效範圍限制：半徑 200 公尺 (直徑 400 公尺)
 // -------------------------------------------------------------
-const CHECK_IN_RADIUS_METERS = parseInt(process.env.CHECK_IN_RADIUS_METERS, 10) || 100;
+const CHECK_IN_RADIUS_METERS = parseInt(process.env.CHECK_IN_RADIUS_METERS, 10) || 200;
 const CHECK_IN_DIAMETER_METERS = CHECK_IN_RADIUS_METERS * 2;
 
 // -------------------------------------------------------------
@@ -418,7 +418,7 @@ async function handleLineEvent(event) {
                   },
                   {
                     type: 'text',
-                    text: '※ 需在打卡點半徑 100 公尺 (直徑 200 公尺) 內且於截止時間前打卡有效。',
+                    text: '※ 需在打卡點半徑 200 公尺 (直徑 400 公尺) 內且於截止時間前打卡有效。',
                     size: 'xxs',
                     color: '#9CA3AF'
                   }
@@ -562,14 +562,14 @@ async function handleLineEvent(event) {
       } catch (e) {}
     }
 
-    // 1. 判斷半徑 100 公尺 (直徑 200 公尺) 距離限制
+    // 1. 判斷半徑 200 公尺 (直徑 400 公尺) 距離限制
     if (distMeters > CHECK_IN_RADIUS_METERS) {
       return lineClient.replyMessage({
         replyToken: event.replyToken,
         messages: [
           {
             type: 'text',
-            text: `🚫【打卡失敗 - 超出範圍】\n\n${senderName} 您好！\n您目前距離打卡點「${group.target_name}」約 ${roundedDistance} 公尺。\n⚠️ 必須在半徑 100 公尺 (直徑 200 公尺) 內方可打卡。\n請移動至打卡範圍內再試一次！`
+            text: `🚫【打卡失敗 - 超出範圍】\n\n${senderName} 您好！\n您目前距離打卡點「${group.target_name}」約 ${roundedDistance} 公尺。\n⚠️ 必須在半徑 200 公尺 (直徑 400 公尺) 內方可打卡。\n請移動至打卡範圍內再試一次！`
           }
         ]
       });
@@ -647,7 +647,7 @@ async function handleLineEvent(event) {
       messages: [
         {
           type: 'text',
-          text: `👋 大家好！歡迎使用【定位打卡連勝系統】！\n\n📌 規則說明：\n1. 初次使用請點擊打卡頁面設定打卡地點、小隊人數上限與每日截止時間。\n2. 打卡需在打卡地點半徑 100 公尺 (直徑 200 公尺) 內方可成功。\n3. 小隊成員每天在截止時間前全員完成打卡，才能累積團隊連勝天數！🔥\n\n輸入「打卡」或點擊下方連結開始：\n${LIFF_URL}?groupId=${encodeURIComponent(groupId)}`
+          text: `👋 大家好！歡迎使用【定位打卡連勝系統】！\n\n📌 規則說明：\n1. 初次使用請點擊打卡頁面設定打卡地點、小隊人數上限與每日截止時間。\n2. 打卡需在打卡地點半徑 200 公尺 (直徑 400 公尺) 內方可成功。\n3. 小隊成員每天在截止時間前全員完成打卡，才能累積團隊連勝天數！🔥\n\n輸入「打卡」或點擊下方連結開始：\n${LIFF_URL}?groupId=${encodeURIComponent(groupId)}`
         }
       ]
     });
@@ -813,7 +813,7 @@ app.post('/api/checkin', async (req, res) => {
     );
     const roundedDistance = Math.round(distanceMeters);
 
-    // 3. 半徑 100 公尺 (直徑 200 公尺) 判定
+    // 3. 半徑 200 公尺 (直徑 400 公尺) 判定
     if (distanceMeters > CHECK_IN_RADIUS_METERS) {
       return res.status(400).json({
         success: false,
@@ -822,7 +822,7 @@ app.post('/api/checkin', async (req, res) => {
         maxAllowedDistance: CHECK_IN_RADIUS_METERS,
         allowedRadius: CHECK_IN_RADIUS_METERS,
         allowedDiameter: CHECK_IN_DIAMETER_METERS,
-        message: `距離打卡點約 ${roundedDistance} 公尺，超出半徑 100 公尺 (直徑 200 公尺) 限制！請靠近打卡點後再試。`
+        message: `距離打卡點約 ${roundedDistance} 公尺，超出半徑 200 公尺 (直徑 400 公尺) 限制！請靠近打卡點後再試。`
       });
     }
 
@@ -882,7 +882,7 @@ app.post('/api/checkin', async (req, res) => {
       checkedInCount: checkedCount,
       message: result.isAllCheckedIn
         ? `🎉 打卡成功！小隊全員皆已打卡，連勝達到 ${result.streak} 天！🔥`
-        : `✅ 打卡成功！(距離基準點 ${roundedDistance} 公尺，於半徑 100m / 直徑 200m 範圍內)。今日進度：${checkedCount}/${quota} 人。`
+        : `✅ 打卡成功！(距離基準點 ${roundedDistance} 公尺，於半徑 200m / 直徑 400m 範圍內)。今日進度：${checkedCount}/${quota} 人。`
     });
   } catch (err) {
     console.error('[API checkin error]', err);
