@@ -103,8 +103,32 @@ async function runTests() {
   assert.strictEqual(status.currentUserCheckedIn, true);
   console.log('  ✔ 通過：群組狀態與成員查詢資料完整。\n');
 
+  // 測試 8: 截止時間後 5 分鐘判定與發送狀態快取
+  console.log('▶ [Test 8] 截止時間後 5 分鐘時間判定演算法');
+  // 8.1 未達 5 分鐘
+  const notDue1 = db.isCutoffPlus5Minutes('08:35', '08:39', '2026-11-07');
+  assert.strictEqual(notDue1.due, false, '08:39 尚未滿截止後 5 分鐘');
+  // 8.2 剛好滿 5 分鐘
+  const due1 = db.isCutoffPlus5Minutes('08:35', '08:40', '2026-11-07');
+  assert.strictEqual(due1.due, true, '08:40 應滿足截止後 5 分鐘');
+  assert.strictEqual(due1.targetDate, '2026-11-07');
+  // 8.3 滿 5 分鐘以上 (08:45)
+  const due2 = db.isCutoffPlus5Minutes('08:35', '08:45', '2026-11-07');
+  assert.strictEqual(due2.due, true);
+  // 8.4 跨午夜 (23:59 截止，隔天 00:04 觸發)
+  const midnightDue = db.isCutoffPlus5Minutes('23:59', '00:04', '2026-11-08');
+  assert.strictEqual(midnightDue.due, true);
+  assert.strictEqual(midnightDue.targetDate, '2026-11-07');
+  // 8.5 驗證發送紀錄快取
+  const isSentBefore = await db.isCutoffReportSent(testGroupId, '2026-11-07', '08:35');
+  assert.strictEqual(isSentBefore, false, '初次應尚未發送');
+  await db.markCutoffReportSent(testGroupId, '2026-11-07', '08:35');
+  const isSentAfter = await db.isCutoffReportSent(testGroupId, '2026-11-07', '08:35');
+  assert.strictEqual(isSentAfter, true, '標記後應為已發送');
+  console.log('  ✔ 通過：截止時間後 5 分鐘判定精確，跨日防重複機制運作正常。\n');
+
   console.log('====================================================');
-  console.log('🎉 所有 7 項自動化測試全部通過！');
+  console.log('🎉 所有 8 項自動化測試全部通過！');
   console.log('====================================================');
 }
 

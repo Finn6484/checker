@@ -59,15 +59,18 @@
         🚫 模擬在半徑外 (250m)
       </button>
     </div>
-    <div class="grid grid-cols-3 gap-1.5">
-      <button onclick="mockTeammateCheckin()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-1.5 px-1 rounded shadow-sm text-center text-[11px]">
-        👥 模擬隊友打卡
+    <div class="grid grid-cols-4 gap-1.5">
+      <button onclick="mockTeammateCheckin()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-1.5 px-1 rounded shadow-sm text-center text-[10px]">
+        👥 隊友打卡
       </button>
-      <button onclick="mockSimulateOverdue()" class="bg-purple-600 hover:bg-purple-700 text-white font-medium py-1.5 px-1 rounded shadow-sm text-center text-[11px]">
+      <button onclick="mockTriggerCutoffReport()" class="bg-teal-600 hover:bg-teal-700 text-white font-medium py-1.5 px-1 rounded shadow-sm text-center text-[10px]">
+        📋 截止推播
+      </button>
+      <button onclick="mockSimulateOverdue()" class="bg-purple-600 hover:bg-purple-700 text-white font-medium py-1.5 px-1 rounded shadow-sm text-center text-[10px]">
         ⏰ 模擬逾時
       </button>
-      <button onclick="mockResetData()" class="bg-slate-600 hover:bg-slate-700 text-white font-medium py-1.5 px-1 rounded shadow-sm text-center text-[11px]">
-        🔄 重設測試資料
+      <button onclick="mockResetData()" class="bg-slate-600 hover:bg-slate-700 text-white font-medium py-1.5 px-1 rounded shadow-sm text-center text-[10px]">
+        🔄 重設資料
       </button>
     </div>
   </div>

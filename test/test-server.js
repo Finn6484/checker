@@ -91,6 +91,24 @@ async function testServer() {
     assert.ok(recentJson.data[0].displayName != null, '紀錄應包含成員暱稱');
     console.log('  ✔ [GET /api/checkins/recent] 成功取得歷史打卡紀錄 (筆數:', recentJson.data.length, ')');
 
+    // 7. Check cutoff cron endpoint
+    const cronRes = await fetch(`${baseUrl}/api/cron/check-cutoff`);
+    const cronJson = await cronRes.json();
+    assert.strictEqual(cronJson.success, true);
+    assert.ok(cronJson.time != null);
+    console.log('  ✔ [GET /api/cron/check-cutoff] 截止 5 分鐘巡檢端點測試成功 (巡檢群組數:', cronJson.totalGroups, ')');
+
+    // 8. Trigger cutoff report simulation
+    const triggerRes = await fetch(`${baseUrl}/api/mock/trigger-cutoff-report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupId: 'mock-group' })
+    });
+    const triggerJson = await triggerRes.json();
+    assert.strictEqual(triggerJson.success, true);
+    assert.ok(triggerJson.data != null);
+    console.log('  ✔ [POST /api/mock/trigger-cutoff-report] 模擬推播截止後 5 分鐘打卡即時資料成功');
+
     console.log('\n====================================================');
     console.log('🎉 所有伺服器 API 端點測試皆順利通過！');
     console.log('====================================================');

@@ -873,6 +873,20 @@ async function mockTeammateCheckin() {
   }
 }
 
+async function mockTriggerCutoffReport() {
+  try {
+    const res = await fetch('/api/mock/trigger-cutoff-report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupId: state.groupId })
+    });
+    const json = await res.json();
+    showToast(json.message, json.success ? 'success' : 'error');
+  } catch (e) {
+    showToast('模擬截止推播失敗', 'error');
+  }
+}
+
 async function mockSimulateOverdue() {
   try {
     const res = await fetch('/api/mock/simulate-overdue', {

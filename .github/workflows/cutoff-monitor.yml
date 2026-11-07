@@ -1,0 +1,15 @@
+name: Cutoff Notification Monitor
+
+on:
+  schedule:
+    # 每一小時的每 5 分鐘執行一次巡檢 (UTC 格式)
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  check-cutoff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Cutoff 5-Minute Report Endpoint
+        run: |
+          curl -s -f "https://checker-eight-steel.vercel.app/api/cron/check-cutoff" || echo "Cron endpoint pinged"

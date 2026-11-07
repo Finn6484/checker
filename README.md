@@ -26,10 +26,14 @@
    - **單人打卡**：即時廣播成員進度（例：`小明已完成打卡！進度 2/3 人`）。
    - **全員達成**：即時廣播大慶祝通知與連勝加成。
    - **逾期警告**：超過截止時間有人缺席時，推播警告並通報缺席名單。
-6. **⚡ Vercel Serverless 架構**：
+6. **📋 截止後 5 分鐘自動推播打卡即時資料**：
+   - 每次過群組設定之截止時間 **5 分鐘後**，自動向 LINE 聊天室發送精美 **「今日打卡即時資料」Flex 卡片**。
+   - 詳細呈現成員打卡時間、打卡距離、缺席名單與小隊達成率。
+   - 內建伺服器長駐背景排程、`/api/cron/check-cutoff` 端點及 GitHub Actions 24/7 監控，跨日跨午夜不遺漏且自動防重複推播。
+7. **⚡ Vercel Serverless 架構**：
    - 修正 Raw Body 中間件掛載順序，確保 LINE Signature 驗證百分之百通過。
    - 符合 Vercel Serverless 規範，提供 `vercel.json` 與 `module.exports = app;`。
-7. **💾 資料庫雙模式 (本地零設定儲存 / 雲端 Supabase)**：
+8. **💾 資料庫雙模式 (本地零設定儲存 / 雲端 Supabase)**：
    - 本地開發時自動降級為本地檔案/記憶體儲存，開箱即測 `?mock=true`。
    - 設定 `SUPABASE_URL` 與 `SUPABASE_KEY` 即無縫切換為 Supabase PostgreSQL。
 

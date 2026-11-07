@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS groups (
     cutoff_time VARCHAR(5) DEFAULT '23:59', -- 每日打卡截止時間 (格式 'HH:mm'，如 '09:30', '18:00', '23:59')
     current_streak INT DEFAULT 0,
     last_streak_date VARCHAR(10),          -- 上次達成全員打卡日期 (格式 'YYYY-MM-DD')
+    last_cutoff_report_date VARCHAR(20),   -- 上次發送截止後 5 分鐘即時資料日期
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

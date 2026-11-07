@@ -94,6 +94,220 @@ async function sendGroupPush(groupId, messagePayload) {
   }
 }
 
+/**
+ * 組裝「📋 今日打卡即時資料」Flex 訊息 (與聊天室查詢及截止後 5 分鐘自動推播共用)
+ */
+function buildCheckInSummaryFlexMessage(status, dateStr, targetGroupId) {
+  const targetName = status.target ? status.target.name : '打卡基準點';
+  const streakText = status.streak > 0 ? `🔥 累積連勝：${status.streak} 天` : '🔥 尚無連勝紀錄';
+  const cutoffText = `⏰ 截止時間：${status.cutoffTime}`;
+  const progressPercent = status.quota > 0 ? Math.round((status.checkedInCount / status.quota) * 100) : 0;
+  const progressText = `👥 今日打卡進度：${status.checkedInCount} / ${status.quota} 人 (${progressPercent}%)`;
+
+  // 組裝每位成員的打卡詳情項目
+  const memberBoxes = (status.members || []).map((m) => {
+    const timeFormatted = m.checkInTime
+      ? new Date(m.checkInTime).toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Taipei' })
+      : null;
+
+    return {
+      type: 'box',
+      layout: 'horizontal',
+      alignItems: 'center',
+      spacing: 'md',
+      margin: 'md',
+      contents: [
+        {
+          type: 'text',
+          text: m.hasCheckedIn ? '✅' : (status.isOverdue ? '❌' : '⏳'),
+          size: 'md',
+          flex: 0
+        },
+        {
+          type: 'box',
+          layout: 'vertical',
+          flex: 1,
+          contents: [
+            {
+              type: 'text',
+              text: m.displayName || '成員',
+              weight: 'bold',
+              size: 'sm',
+              color: '#1F2937'
+            },
+            {
+              type: 'text',
+              text: m.hasCheckedIn
+                ? `於 ${timeFormatted} 打卡 (距離 ${m.distance || 0}m)`
+                : (status.isOverdue ? '今日截止前未打卡' : '尚未打卡 (等待中)'),
+              size: 'xxs',
+              color: m.hasCheckedIn ? '#059669' : (status.isOverdue ? '#DC2626' : '#9CA3AF')
+            }
+          ]
+        },
+        {
+          type: 'text',
+          text: m.hasCheckedIn ? '已打卡' : (status.isOverdue ? '缺席' : '待打卡'),
+          size: 'xs',
+          weight: 'bold',
+          align: 'end',
+          color: m.hasCheckedIn ? '#059669' : (status.isOverdue ? '#DC2626' : '#6B7280'),
+          flex: 0
+        }
+      ]
+    };
+  });
+
+  return {
+    type: 'flex',
+    altText: `📋【今日打卡即時資料】${status.checkedInCount}/${status.quota} 人完成`,
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#1E293B',
+        contents: [
+          {
+            type: 'text',
+            text: '📋 今日打卡即時資料',
+            weight: 'bold',
+            size: 'lg',
+            color: '#FFFFFF'
+          },
+          {
+            type: 'text',
+            text: `${dateStr} • 打卡點：${targetName}`,
+            size: 'xs',
+            color: '#94A3B8',
+            margin: 'xs'
+          }
+        ]
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'box',
+            layout: 'vertical',
+            backgroundColor: '#F8FAFC',
+            cornerRadius: 'md',
+            paddingAll: 'md',
+            contents: [
+              {
+                type: 'text',
+                text: progressText,
+                weight: 'bold',
+                size: 'sm',
+                color: '#0F172A'
+              },
+              {
+                type: 'text',
+                text: `${streakText}  |  ${cutoffText}`,
+                size: 'xs',
+                color: '#475569',
+                margin: 'xs'
+              }
+            ]
+          },
+          {
+            type: 'separator',
+            margin: 'lg'
+          },
+          {
+            type: 'text',
+            text: `小隊成員名單 (${status.members ? status.members.length : 0} 人)：`,
+            weight: 'bold',
+            size: 'xs',
+            color: '#64748B',
+            margin: 'md'
+          },
+          ...memberBoxes
+        ]
+      },
+      footer: {
+        type: 'box',
+        layout: 'horizontal',
+        spacing: 'sm',
+        contents: [
+          {
+            type: 'button',
+            action: {
+              type: 'uri',
+              label: '🗺️ 查看地圖 (LIFF)',
+              uri: `${LIFF_URL}?groupId=${encodeURIComponent(targetGroupId)}`
+            },
+            style: 'secondary',
+            height: 'sm'
+          }
+        ]
+      }
+    }
+  };
+}
+
+/**
+ * 巡檢所有群組，若到了截止時間後 5 分鐘則推播「今日打卡即時資料」Flex 訊息
+ */
+async function checkAndSendAllCutoffReports() {
+  const todayStr = db.getTaipeiDateString();
+  const nowTime = db.getTaipeiTimeString();
+  const groups = await db.getAllGroups();
+  const results = [];
+
+  for (const group of groups) {
+    if (!group || !group.group_id) continue;
+    const groupId = group.group_id;
+    const cutoffTime = group.cutoff_time || '23:59';
+
+    // 檢查是否已達截止時間後 5 分鐘
+    const timing = db.isCutoffPlus5Minutes(cutoffTime, nowTime, todayStr);
+    if (!timing.due) {
+      results.push({ groupId, sent: false, reason: 'not_due', nowTime, cutoffTime });
+      continue;
+    }
+
+    const targetDate = timing.targetDate;
+
+    // 檢查是否已針對此日期的截止時間推播過
+    const alreadySent = await db.isCutoffReportSent(groupId, targetDate, cutoffTime);
+    if (alreadySent) {
+      results.push({ groupId, sent: false, reason: 'already_sent', targetDate, cutoffTime });
+      continue;
+    }
+
+    // 取得該群組在 targetDate 的打卡狀態
+    const status = await db.getGroupStatus(groupId, targetDate);
+
+    // 組裝打卡即時資料 Flex Message
+    const flexMessage = buildCheckInSummaryFlexMessage(status, targetDate, groupId);
+
+    // 推播 Flex Message 至 LINE 群組
+    await sendGroupPush(groupId, flexMessage);
+
+    // 標記已發送，避免當天重複推播
+    await db.markCutoffReportSent(groupId, targetDate, cutoffTime);
+
+    results.push({
+      groupId,
+      sent: true,
+      targetDate,
+      cutoffTime,
+      checkedInCount: status.checkedInCount,
+      quota: status.quota
+    });
+    console.log(`[Cutoff Auto-Report] 成功於截止時間 (${cutoffTime}) 後 5 分鐘推播即時資料至群組 ${groupId}`);
+  }
+
+  return {
+    checkedTime: nowTime,
+    today: todayStr,
+    totalGroups: groups.length,
+    results
+  };
+}
+
 // -------------------------------------------------------------
 // LINE Bot 事件處理器
 // -------------------------------------------------------------
@@ -273,176 +487,32 @@ async function handleLineEvent(event) {
       }
 
       const status = await db.getGroupStatus(targetGroupId, todayStr, userId);
-      const targetName = status.target ? status.target.name : '⚠️ 尚未設定打卡點';
-      const streakText = status.streak > 0 ? `🔥 累積連勝：${status.streak} 天` : '🔥 尚無連勝紀錄';
-      const cutoffText = `⏰ 截止時間：${status.cutoffTime}`;
-      const progressPercent = status.quota > 0 ? Math.round((status.checkedInCount / status.quota) * 100) : 0;
-      const progressText = `👥 今日打卡進度：${status.checkedInCount} / ${status.quota} 人 (${progressPercent}%)`;
+      const flexMessage = buildCheckInSummaryFlexMessage(status, todayStr, targetGroupId);
 
-      // 組裝每位成員的打卡詳情項目
-      const memberBoxes = (status.members || []).map((m) => {
-        const timeFormatted = m.checkInTime
-          ? new Date(m.checkInTime).toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Taipei' })
-          : null;
-
-        return {
-          type: 'box',
-          layout: 'horizontal',
-          alignItems: 'center',
-          spacing: 'md',
-          margin: 'md',
-          contents: [
-            {
-              type: 'text',
-              text: m.hasCheckedIn ? '✅' : (status.isOverdue ? '❌' : '⏳'),
-              size: 'md',
-              flex: 0
-            },
-            {
-              type: 'box',
-              layout: 'vertical',
-              flex: 1,
-              contents: [
-                {
-                  type: 'text',
-                  text: m.displayName || '成員',
-                  weight: 'bold',
-                  size: 'sm',
-                  color: '#1F2937'
-                },
-                {
-                  type: 'text',
-                  text: m.hasCheckedIn
-                    ? `於 ${timeFormatted} 打卡 (距離 ${m.distance || 0}m)`
-                    : (status.isOverdue ? '今日截止前未打卡' : '尚未打卡 (等待中)'),
-                  size: 'xxs',
-                  color: m.hasCheckedIn ? '#059669' : (status.isOverdue ? '#DC2626' : '#9CA3AF')
-                }
-              ]
-            },
-            {
-              type: 'text',
-              text: m.hasCheckedIn ? '已打卡' : (status.isOverdue ? '缺席' : '待打卡'),
-              size: 'xs',
-              weight: 'bold',
-              align: 'end',
-              color: m.hasCheckedIn ? '#059669' : (status.isOverdue ? '#DC2626' : '#6B7280'),
-              flex: 0
-            }
-          ]
-        };
-      });
-
-      return lineClient.replyMessage({
-        replyToken: event.replyToken,
-        messages: [
+      // 附加快速操作選單
+      flexMessage.quickReply = {
+        items: [
           {
-            type: 'flex',
-            altText: `📋【今日打卡資料】${status.checkedInCount}/${status.quota} 人完成`,
-            contents: {
-              type: 'bubble',
-              header: {
-                type: 'box',
-                layout: 'vertical',
-                backgroundColor: '#1E293B',
-                contents: [
-                  {
-                    type: 'text',
-                    text: '📋 今日打卡即時資料',
-                    weight: 'bold',
-                    size: 'lg',
-                    color: '#FFFFFF'
-                  },
-                  {
-                    type: 'text',
-                    text: `${todayStr} • 打卡點：${targetName}`,
-                    size: 'xs',
-                    color: '#94A3B8',
-                    margin: 'xs'
-                  }
-                ]
-              },
-              body: {
-                type: 'box',
-                layout: 'vertical',
-                contents: [
-                  {
-                    type: 'box',
-                    layout: 'vertical',
-                    backgroundColor: '#F8FAFC',
-                    cornerRadius: 'md',
-                    paddingAll: 'md',
-                    contents: [
-                      {
-                        type: 'text',
-                        text: progressText,
-                        weight: 'bold',
-                        size: 'sm',
-                        color: '#0F172A'
-                      },
-                      {
-                        type: 'text',
-                        text: `${streakText}  |  ${cutoffText}`,
-                        size: 'xs',
-                        color: '#475569',
-                        margin: 'xs'
-                      }
-                    ]
-                  },
-                  {
-                    type: 'separator',
-                    margin: 'lg'
-                  },
-                  {
-                    type: 'text',
-                    text: `小隊成員名單 (${status.members ? status.members.length : 0} 人)：`,
-                    weight: 'bold',
-                    size: 'xs',
-                    color: '#64748B',
-                    margin: 'md'
-                  },
-                  ...memberBoxes
-                ]
-              },
-              footer: {
-                type: 'box',
-                layout: 'horizontal',
-                spacing: 'sm',
-                contents: [
-                  {
-                    type: 'button',
-                    action: {
-                      type: 'uri',
-                      label: '🗺️ 查看地圖 (LIFF)',
-                      uri: `${LIFF_URL}?groupId=${encodeURIComponent(targetGroupId)}`
-                    },
-                    style: 'secondary',
-                    height: 'sm'
-                  }
-                ]
-              }
-            },
-            quickReply: {
-              items: [
-                {
-                  type: 'action',
-                  action: {
-                    type: 'location',
-                    label: '📍 傳送定位打卡'
-                  }
-                },
-                {
-                  type: 'action',
-                  action: {
-                    type: 'message',
-                    label: '🔄 重新整理資料',
-                    text: '打卡資料'
-                  }
-                }
-              ]
+            type: 'action',
+            action: {
+              type: 'location',
+              label: '📍 傳送定位打卡'
+            }
+          },
+          {
+            type: 'action',
+            action: {
+              type: 'message',
+              label: '🔄 重新整理資料',
+              text: '打卡資料'
             }
           }
         ]
+      };
+
+      return lineClient.replyMessage({
+        replyToken: event.replyToken,
+        messages: [flexMessage]
       });
     }
   }
@@ -627,6 +697,8 @@ app.get('/api/status', async (req, res) => {
     const todayStr = db.getTaipeiDateString();
 
     const status = await db.getGroupStatus(groupId, todayStr, userId);
+    // 順便觸發截止時間檢查 (Serverless 環境被動保險)
+    checkAndSendAllCutoffReports().catch(() => {});
     res.json({ success: true, data: status });
   } catch (err) {
     console.error('[API status error]', err);
@@ -910,6 +982,58 @@ app.post('/api/mock/reset', async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
+
+/**
+ * 定時巡檢端點：檢查各群組是否已過截止時間 5 分鐘並發送打卡即時資料
+ * (支援外部排程、Vercel Cron 與 GitHub Actions 呼叫)
+ */
+app.all('/api/cron/check-cutoff', async (req, res) => {
+  try {
+    const result = await checkAndSendAllCutoffReports();
+    res.json({
+      success: true,
+      time: db.getTaipeiTimeString(),
+      date: db.getTaipeiDateString(),
+      ...result
+    });
+  } catch (err) {
+    console.error('[API check-cutoff error]', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * 測試模式：模擬發送截止時間後 5 分鐘的打卡即時資料 Flex 訊息
+ */
+app.post('/api/mock/trigger-cutoff-report', async (req, res) => {
+  try {
+    const groupId = req.body.groupId || 'mock-group';
+    const todayStr = db.getTaipeiDateString();
+    const status = await db.getGroupStatus(groupId, todayStr);
+    const flexMessage = buildCheckInSummaryFlexMessage(status, todayStr, groupId);
+
+    await sendGroupPush(groupId, flexMessage);
+
+    res.json({
+      success: true,
+      message: `已成功模擬發送截止後 5 分鐘之「今日打卡即時資料」Flex 訊息至群組 ${groupId}！`,
+      data: status
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 每 30 秒定時檢查各群組是否已過截止時間 5 分鐘 (本地服務或長駐環境時自動排程發送)
+const CUTOFF_CHECK_INTERVAL_MS = 30 * 1000;
+const cutoffIntervalTimer = setInterval(() => {
+  checkAndSendAllCutoffReports().catch((e) => {
+    console.warn('[Cutoff Background Job Error]:', e.message);
+  });
+}, CUTOFF_CHECK_INTERVAL_MS);
+if (cutoffIntervalTimer.unref) {
+  cutoffIntervalTimer.unref();
+}
 
 /**
  * 系統健康狀態

@@ -95,6 +95,38 @@ function isTimePastCutoff(cutoffTime = '23:59', nowTimeString = getTaipeiTimeStr
   return false;
 }
 
+/**
+ * 判斷是否已到達截止時間後 5 分鐘
+ * @param {string} cutoffTime 截止時間 (格式 'HH:mm')
+ * @param {string} nowTimeString 當前台北時間 (格式 'HH:mm')
+ * @param {string} todayStr 當前台北日期 (格式 'YYYY-MM-DD')
+ * @returns {{ due: boolean, targetDate?: string }}
+ */
+function isCutoffPlus5Minutes(cutoffTime = '23:59', nowTimeString = getTaipeiTimeString(), todayStr = getTaipeiDateString()) {
+  if (!cutoffTime) return { due: false };
+  const [cutH, cutM] = cutoffTime.split(':').map(Number);
+  const [nowH, nowM] = nowTimeString.split(':').map(Number);
+  const cutMinutes = cutH * 60 + cutM;
+  const nowMinutes = nowH * 60 + nowM;
+  const triggerMinutes = cutMinutes + 5;
+
+  if (triggerMinutes < 1440) {
+    // 觸發時間在同一天內 (例如 08:35 截止 -> 08:40 觸發)
+    if (nowMinutes >= triggerMinutes) {
+      return { due: true, targetDate: todayStr };
+    }
+    return { due: false };
+  } else {
+    // 跨午夜到隔天凌晨 (例如 23:58 + 5分 = 00:03，23:59 + 5分 = 00:04)
+    const spillMinutes = triggerMinutes - 1440;
+    if (nowMinutes >= spillMinutes && nowMinutes < 720) {
+      const yesterdayStr = getYesterdayTaipeiDateString(todayStr);
+      return { due: true, targetDate: yesterdayStr };
+    }
+    return { due: false };
+  }
+}
+
 // -------------------------------------------------------------
 // 測試模式假資料初始化 (提供零設定即開即測)
 // -------------------------------------------------------------
@@ -160,6 +192,81 @@ async function getGroup(groupId) {
       seedMockData(groupId);
     }
     return memoryDb.groups[groupId] || null;
+  }
+}
+
+/**
+ * 取得所有設定過的群組清單 (用於截止定時巡檢)
+ */
+async function getAllGroups() {
+  if (isCloudMode && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('groups')
+        .select('*');
+      if (error) {
+        console.error('[Supabase getAllGroups Error]', error);
+        return Object.values(memoryDb.groups || {});
+      }
+      return data || [];
+    } catch (e) {
+      return Object.values(memoryDb.groups || {});
+    }
+  } else {
+    return Object.values(memoryDb.groups || {});
+  }
+}
+
+// 記錄各群組每日截止報表發送快取 (防止重複發送)
+const sentCutoffReports = new Set();
+
+/**
+ * 檢查該群組是否已針對特定日期的截止時間發送過打卡即時資料
+ */
+async function isCutoffReportSent(groupId, dateStr, cutoffTime = '') {
+  const cacheKey = cutoffTime ? `${groupId}_${dateStr}_${cutoffTime}` : `${groupId}_${dateStr}`;
+  if (sentCutoffReports.has(cacheKey) || sentCutoffReports.has(`${groupId}_${dateStr}`)) {
+    return true;
+  }
+
+  const group = await getGroup(groupId);
+  if (!group) return false;
+
+  if (group.last_cutoff_report_date === dateStr || group.last_cutoff_report_date === cacheKey) {
+    sentCutoffReports.add(cacheKey);
+    sentCutoffReports.add(`${groupId}_${dateStr}`);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 標記該群組今日截止即時資料已發送
+ */
+async function markCutoffReportSent(groupId, dateStr, cutoffTime = '') {
+  const cacheKey = cutoffTime ? `${groupId}_${dateStr}_${cutoffTime}` : `${groupId}_${dateStr}`;
+  sentCutoffReports.add(cacheKey);
+  sentCutoffReports.add(`${groupId}_${dateStr}`);
+
+  // 更新記憶體/本機檔案資料庫
+  if (memoryDb.groups[groupId]) {
+    memoryDb.groups[groupId].last_cutoff_report_date = dateStr;
+    saveLocalDb();
+  }
+
+  // 嘗試更新雲端 Supabase (若 schema 尚無該欄位則容錯略過)
+  if (isCloudMode && supabase) {
+    try {
+      await supabase
+        .from('groups')
+        .update({
+          last_cutoff_report_date: dateStr,
+          updated_at: new Date().toISOString()
+        })
+        .eq('group_id', groupId);
+    } catch (err) {
+      console.warn('[Supabase markCutoffReportSent Warning]', err.message);
+    }
   }
 }
 
@@ -696,7 +803,9 @@ module.exports = {
   getTaipeiTimeString,
   getYesterdayTaipeiDateString,
   isTimePastCutoff,
+  isCutoffPlus5Minutes,
   getGroup,
+  getAllGroups,
   setupGroup,
   upsertMember,
   joinTeam,
@@ -706,6 +815,8 @@ module.exports = {
   recordCheckIn,
   evaluateAndUpdateStreak,
   getGroupStatus,
+  isCutoffReportSent,
+  markCutoffReportSent,
   resetMockGroup,
   seedMockData,
   getUserRealGroup,
