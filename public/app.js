@@ -1,8 +1,12 @@
 // ========================================================
-// LINE 定位打卡連勝系統前端應用 (LIFF + GPS 100m 距離演算法)
+// LINE 定位打卡連勝系統前端應用 (LIFF + GPS 半徑 100m / 直徑 200m 距離演算法)
 // ========================================================
 
 const LIFF_ID = '2012424428-3Vg4egq5';
+
+// 打卡有效範圍限制：半徑 100 公尺 (直徑 200 公尺)
+const CHECK_IN_RADIUS_METERS = 100;
+const CHECK_IN_DIAMETER_METERS = CHECK_IN_RADIUS_METERS * 2;
 
 let state = {
   isMockMode: false,
@@ -384,13 +388,13 @@ function updateDistanceAndUI() {
   const rounded = Math.round(distMeters);
   distEl.innerText = rounded;
 
-  const inRange = rounded <= 100;
+  const inRange = rounded <= CHECK_IN_RADIUS_METERS;
 
   if (inRange) {
-    badgeEl.innerText = `🎯 距離 ${rounded} 公尺 (在 100m 範圍內，允許打卡)`;
+    badgeEl.innerText = `🎯 距離 ${rounded} 公尺 (在半徑 100m / 直徑 200m 範圍內，允許打卡)`;
     badgeEl.className = 'inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 mt-1';
   } else {
-    badgeEl.innerText = `🚫 距離 ${rounded} 公尺 (超出 100m 範圍，不可打卡)`;
+    badgeEl.innerText = `🚫 距離 ${rounded} 公尺 (超出半徑 100m / 直徑 200m 範圍，不可打卡)`;
     badgeEl.className = 'inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-800 mt-1';
   }
 
@@ -416,7 +420,7 @@ function updateDistanceAndUI() {
   } else if (!inRange) {
     btn.disabled = true;
     btn.className = 'w-full py-4 rounded-2xl font-bold text-base shadow transition bg-slate-200 text-slate-500 cursor-not-allowed';
-    btnText.innerText = `距離打卡點還有 ${rounded} 公尺 (需 <100m)`;
+    btnText.innerText = `距離打卡點還有 ${rounded} 公尺 (需在半徑 100m 內)`;
     btnIcon.innerText = '🚫';
   } else {
     // 允許打卡！
@@ -451,7 +455,7 @@ function updateRadarMap(targetLat, targetLng, targetName, userLat, userLng, inRa
     }).addTo(map);
   }
 
-  // 2. 打卡基準點 Marker & 100m 範圍圓
+  // 2. 打卡基準點 Marker & 半徑 100m (直徑 200m) 範圍圓
   const targetIcon = L.divIcon({
     className: 'custom-target-pin',
     html: `<div style="background-color:#10B981; color:#fff; font-weight:bold; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(0,0,0,0.3); border:2px solid #fff; font-size:15px;">📍</div>`,
@@ -461,18 +465,18 @@ function updateRadarMap(targetLat, targetLng, targetName, userLat, userLng, inRa
 
   if (!targetMarker) {
     targetMarker = L.marker(targetLatLng, { icon: targetIcon })
-      .bindPopup(`<b>📍 ${escapeHtml(targetName || '打卡基準點')}</b><br>半徑 100 公尺打卡範圍`)
+      .bindPopup(`<b>📍 ${escapeHtml(targetName || '打卡基準點')}</b><br>半徑 100 公尺 (直徑 200 公尺) 打卡範圍`)
       .addTo(map);
   } else {
     targetMarker.setLatLng(targetLatLng);
     if (targetMarker.getPopup()) {
-      targetMarker.getPopup().setContent(`<b>📍 ${escapeHtml(targetName || '打卡基準點')}</b><br>半徑 100 公尺打卡範圍`);
+      targetMarker.getPopup().setContent(`<b>📍 ${escapeHtml(targetName || '打卡基準點')}</b><br>半徑 100 公尺 (直徑 200 公尺) 打卡範圍`);
     }
   }
 
   if (!targetCircle) {
     targetCircle = L.circle(targetLatLng, {
-      radius: 100,
+      radius: CHECK_IN_RADIUS_METERS, // 半徑 100 公尺 (直徑 200 公尺)
       color: '#10B981',
       weight: 2,
       dashArray: '5, 5',
@@ -481,6 +485,7 @@ function updateRadarMap(targetLat, targetLng, targetName, userLat, userLng, inRa
     }).addTo(map);
   } else {
     targetCircle.setLatLng(targetLatLng);
+    targetCircle.setRadius(CHECK_IN_RADIUS_METERS);
   }
 
   // 3. 使用者目前 GPS 位置 Marker (帶藍色發光脈衝)
@@ -519,7 +524,7 @@ function updateRadarMap(targetLat, targetLng, targetName, userLat, userLng, inRa
   // 5. 更新地圖懸浮距離標籤
   const mapBadgeText = document.getElementById('mapDistanceText');
   if (mapBadgeText) {
-    mapBadgeText.innerText = `${roundedDistance}m ${inRange ? '✅ 在 100m 內' : '🚫 超出 100m'}`;
+    mapBadgeText.innerText = `${roundedDistance}m ${inRange ? '✅ 在半徑 100m 內' : '🚫 超出 100m'}`;
   }
 
   // 6. 自動調整視野包含目標點、100m 圓形與使用者
@@ -828,21 +833,21 @@ function toggleMockPanel() {
 function mockSetLocation(inRange) {
   // 基準點: 台北 101 (25.033964, 121.564468)
   if (inRange) {
-    // 偏移 ~30 公尺
+    // 偏移 ~30 公尺 (在半徑 100m 範圍內)
     state.currentGPS = {
       lat: 25.033964 + 0.00025,
       lng: 121.564468 + 0.0001,
       accuracy: 5
     };
-    showToast('🎯 已模擬 GPS 在半徑 100m 範圍內 (約 30m)', 'success');
+    showToast('🎯 已模擬 GPS 在半徑 100m / 直徑 200m 範圍內 (約 30m)', 'success');
   } else {
-    // 偏移 ~250 公尺
+    // 偏移 ~250 公尺 (超出半徑 100m 範圍)
     state.currentGPS = {
       lat: 25.033964 + 0.0022,
       lng: 121.564468 + 0.0015,
       accuracy: 10
     };
-    showToast('🚫 已模擬 GPS 在範圍外 (約 250m)', 'info');
+    showToast('🚫 已模擬 GPS 超出半徑 100m 範圍 (約 250m)', 'info');
   }
 
   document.getElementById('currentCoords').innerText = `${state.currentGPS.lat.toFixed(5)}, ${state.currentGPS.lng.toFixed(5)} (模擬)`;

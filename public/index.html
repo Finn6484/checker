@@ -53,10 +53,10 @@
     <p class="font-bold text-amber-900 mb-2">⚡ 快速模擬控制台：</p>
     <div class="grid grid-cols-2 gap-2 mb-2">
       <button onclick="mockSetLocation(true)" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-1.5 px-2 rounded shadow-sm text-center">
-        🎯 模擬在範圍內 (30m)
+        🎯 模擬在半徑內 (30m)
       </button>
       <button onclick="mockSetLocation(false)" class="bg-rose-600 hover:bg-rose-700 text-white font-medium py-1.5 px-2 rounded shadow-sm text-center">
-        🚫 模擬在範圍外 (250m)
+        🚫 模擬在半徑外 (250m)
       </button>
     </div>
     <div class="grid grid-cols-3 gap-1.5">
@@ -178,7 +178,7 @@
         </div>
         <!-- 地圖圖例說明 -->
         <div class="absolute bottom-2 left-2 z-[400] bg-white/95 backdrop-blur-sm px-2 py-0.5 rounded-lg text-[10px] font-medium shadow text-slate-600 flex items-center space-x-2">
-          <span class="flex items-center space-x-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block border border-white"></span><span>100m 範圍</span></span>
+          <span class="flex items-center space-x-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block border border-white"></span><span>半徑 100m (直徑 200m)</span></span>
           <span class="flex items-center space-x-1"><span class="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block border border-white"></span><span>目前位置</span></span>
           <span class="flex items-center space-x-1"><span class="w-3 border-b-2 border-dashed border-emerald-600 inline-block"></span><span>距離指引</span></span>
         </div>
@@ -198,7 +198,7 @@
           <span id="checkInBtnText">定位偵測中...</span>
         </button>
         <p id="checkInNotice" class="text-center text-xs text-slate-400 mt-2 font-medium">
-          ※ 必須在打卡地點半徑 100 公尺內且在截止時間前，按鈕才會解鎖
+          ※ 必須在打卡地點半徑 100 公尺 (直徑 200 公尺) 內且在截止時間前，按鈕才會解鎖
         </p>
       </div>
     </section>
@@ -222,7 +222,7 @@
             <div id="targetCoordinates" class="text-xs text-slate-500 font-mono mt-0.5">緯度: 25.033964, 經度: 121.564468</div>
           </div>
           <span class="text-xs bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded">
-            半徑 100m
+            半徑 100m (直徑 200m)
           </span>
         </div>
       </div>
@@ -230,7 +230,7 @@
       <div id="targetNotSetView" class="hidden bg-amber-50 border border-amber-200 p-4 rounded-xl text-center">
         <span class="text-3xl block mb-2">📌</span>
         <h3 class="font-bold text-amber-900 text-sm">此群組尚未設定打卡地點！</h3>
-        <p class="text-xs text-amber-700 mt-1 mb-3">請至打卡基準地點，點選下方按鈕以目前 GPS 座標建立半徑 100 公尺打卡點。</p>
+        <p class="text-xs text-amber-700 mt-1 mb-3">請至打卡基準地點，點選下方按鈕以目前 GPS 座標建立半徑 100 公尺 (直徑 200 公尺) 打卡點。</p>
         <button onclick="promptEditSettings()" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-4 rounded-xl shadow text-sm transition">
           📍 設定打卡地點、名額與截止時間
         </button>
