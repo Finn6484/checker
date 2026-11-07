@@ -229,14 +229,43 @@ async function isCutoffReportSent(groupId, dateStr, cutoffTime = '') {
     return true;
   }
 
-  const group = await getGroup(groupId);
-  if (!group) return false;
-
-  if (group.last_cutoff_report_date === dateStr || group.last_cutoff_report_date === cacheKey) {
+  // 1. 本地記憶體檢查
+  const localGroup = memoryDb.groups[groupId];
+  if (localGroup && (localGroup.last_cutoff_report_date === dateStr || localGroup.last_cutoff_report_date === cacheKey)) {
     sentCutoffReports.add(cacheKey);
     sentCutoffReports.add(`${groupId}_${dateStr}`);
     return true;
   }
+
+  // 2. 雲端 Supabase 檢查 (利用 sentinel 記錄持久化)
+  if (isCloudMode && supabase) {
+    try {
+      const sentinelId = `__cutoff_report_${dateStr}`;
+      const { data, error } = await supabase
+        .from('group_members')
+        .select('user_id')
+        .eq('group_id', groupId)
+        .eq('user_id', sentinelId)
+        .maybeSingle();
+
+      if (!error && data) {
+        sentCutoffReports.add(cacheKey);
+        sentCutoffReports.add(`${groupId}_${dateStr}`);
+        return true;
+      }
+    } catch (e) {}
+
+    // 亦檢查 groups.last_cutoff_report_date (若使用者有加欄位)
+    try {
+      const group = await getGroup(groupId);
+      if (group && (group.last_cutoff_report_date === dateStr || group.last_cutoff_report_date === cacheKey)) {
+        sentCutoffReports.add(cacheKey);
+        sentCutoffReports.add(`${groupId}_${dateStr}`);
+        return true;
+      }
+    } catch (e) {}
+  }
+
   return false;
 }
 
@@ -254,8 +283,24 @@ async function markCutoffReportSent(groupId, dateStr, cutoffTime = '') {
     saveLocalDb();
   }
 
-  // 嘗試更新雲端 Supabase (若 schema 尚無該欄位則容錯略過)
+  // 雲端 Supabase 寫入持久化紀錄
   if (isCloudMode && supabase) {
+    try {
+      const sentinelId = `__cutoff_report_${dateStr}`;
+      await supabase
+        .from('group_members')
+        .upsert({
+          group_id: groupId,
+          user_id: sentinelId,
+          display_name: 'Cutoff Sent Sentinel',
+          picture_url: cutoffTime || '',
+          is_team_member: false,
+          is_active: false
+        }, { onConflict: 'group_id,user_id' });
+    } catch (e) {
+      console.warn('[Supabase sentinel error]:', e.message);
+    }
+
     try {
       await supabase
         .from('groups')
@@ -264,9 +309,7 @@ async function markCutoffReportSent(groupId, dateStr, cutoffTime = '') {
           updated_at: new Date().toISOString()
         })
         .eq('group_id', groupId);
-    } catch (err) {
-      console.warn('[Supabase markCutoffReportSent Warning]', err.message);
-    }
+    } catch (err) {}
   }
 }
 
